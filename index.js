@@ -14,7 +14,8 @@ const commands = [
     description: 'Sendet eine Nachricht als Embed in diesen Channel.',
     options: [
       { name: 'text', description: 'Text der Embed-Nachricht', type: 3, required: true },
-      { name: 'bild', description: 'Bild-URL (optional)', type: 3, required: false }
+      { name: 'bild', description: 'Bild-URL (optional)', type: 3, required: false },
+      { name: 'farbe', description: 'Embed-Farbe als HEX, z.B. #ff0000', type: 3, required: false }
     ]
   }
 ];
@@ -41,10 +42,17 @@ client.on('interactionCreate', async interaction => {
 
     const text = interaction.options.getString('text', true);
     const bild = interaction.options.getString('bild');
+    const farbe = interaction.options.getString('farbe') || '#5865F2';
+
+    if (!/^#?[0-9A-Fa-f]{6}$/.test(farbe)) {
+      return interaction.reply({ content: '❌ Ungültige Farbe. Verwende z.B. `#ff0000` oder `ff0000`.', ephemeral: true });
+    }
+
+    const hex = farbe.startsWith('#') ? farbe : `#${farbe}`;
 
     const embed = new EmbedBuilder()
       .setDescription(text)
-      .setColor(0x5865F2)
+      .setColor(hex)
       .setTimestamp();
 
     if (bild) {
