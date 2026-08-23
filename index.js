@@ -3,6 +3,8 @@ const { Client, GatewayIntentBits, EmbedBuilder, REST, Routes, PermissionFlagsBi
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 const commandRoles = new Map();
+const SETUP_USER_ID = '1177592138968604675';
+const GUILD_ID = '1177592138968604675';
 
 const commands = [
   { name: 'setup', description: 'Bot-Commands und erlaubte Rollen verwalten.' },
@@ -29,7 +31,7 @@ const commands = [
 const ausnachResponses = new Map();
 
 function hasCommandAccess(interaction, commandName) {
-  if (interaction.guild?.ownerId === interaction.user.id) return true;
+  if (interaction.user.id === SETUP_USER_ID) return true;
   const roleId = commandRoles.get(`${interaction.guildId}:${commandName}`);
   return roleId ? interaction.member.roles.cache.has(roleId) : false;
 }
@@ -38,8 +40,8 @@ client.once('ready', async () => {
   console.log(`Bot online als ${client.user.tag}`);
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   try {
-    await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-    console.log('Slash-Commands registriert.');
+    await rest.put(Routes.applicationGuildCommands(client.user.id, GUILD_ID), { body: commands });
+    console.log(`Slash-Commands für Server ${GUILD_ID} registriert.`);
   } catch (error) { console.error('Fehler beim Registrieren der Commands:', error); }
 });
 
@@ -52,27 +54,17 @@ function colorValue(value) {
 client.on('interactionCreate', async interaction => {
   if (interaction.isChatInputCommand()) {
     if (interaction.commandName === 'setup') {
-      if (interaction.guild?.ownerId !== interaction.user.id) {
-        return interaction.reply({ content: '❌ Nur der **Serverbesitzer** darf `/setup` benutzen.', ephemeral: true });
+      if (interaction.user.id !== SETUP_USER_ID) {
+        return interaction.reply({ content: '❌ Du darfst `/setup` nicht benutzen.', ephemeral: true });
       }
-
-      const embed = new EmbedBuilder()
-        .setTitle('⚙️ Bot Setup')
-        .setDescription('Wähle einen Command aus und danach die Rolle, die ihn benutzen darf.')
-        .addFields(
-          { name: '/nachricht', value: 'Embed-Nachrichten senden', inline: false },
-          { name: '/ausnach', value: 'Auswahl-Nachrichten erstellen', inline: false }
-        )
-        .setColor('#5865F2');
-
-      const menu = new StringSelectMenuBuilder()
-        .setCustomId(`setup_command_${interaction.user.id}`)
-        .setPlaceholder('Command auswählen ...')
-        .addOptions([
-          { label: '/nachricht', value: 'nachricht', description: 'Rolle für /nachricht festlegen' },
-          { label: '/ausnach', value: 'ausnach', description: 'Rolle für /ausnach festlegen' }
-        ]);
-
+      const embed = new EmbedBuilder().setTitle('⚙️ Bot Setup').setDescription('Wähle einen Command aus und danach die Rolle, die ihn benutzen darf.').addFields(
+        { name: '/nachricht', value: 'Embed-Nachrichten senden' },
+        { name: '/ausnach', value: 'Auswahl-Nachrichten erstellen' }
+      ).setColor('#5865F2');
+      const menu = new StringSelectMenuBuilder().setCustomId(`setup_command_${interaction.user.id}`).setPlaceholder('Command auswählen ...').addOptions(
+        { label: '/nachricht', value: 'nachricht', description: 'Rolle für /nachricht festlegen' },
+        { label: '/ausnach', value: 'ausnach', description: 'Rolle für /ausnach festlegen' }
+      );
       return interaction.reply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)], ephemeral: true });
     }
 
@@ -111,7 +103,7 @@ client.on('interactionCreate', async interaction => {
 
   if (interaction.isStringSelectMenu()) {
     if (interaction.customId.startsWith('setup_command_')) {
-      if (interaction.guild?.ownerId !== interaction.user.id) return interaction.reply({ content: '❌ Nur der Serverbesitzer darf das Setup benutzen.', ephemeral: true });
+      if (interaction.user.id !== SETUP_USER_ID) return interaction.reply({ content: '❌ Du darfst das Setup nicht benutzen.', ephemeral: true });
       const commandName = interaction.values[0];
       const roles = interaction.guild.roles.cache.filter(r => r.id !== interaction.guild.id && !r.managed).sort((a, b) => b.position - a.position).first(25);
       const roleMenu = new StringSelectMenuBuilder().setCustomId(`setup_role_${interaction.user.id}_${commandName}`).setPlaceholder('Rolle auswählen ...').addOptions(roles.map(role => ({ label: role.name.slice(0, 100), value: role.id, description: `Darf /${commandName} benutzen` })));
@@ -119,13 +111,13 @@ client.on('interactionCreate', async interaction => {
     }
 
     if (interaction.customId.startsWith('setup_role_')) {
-      if (interaction.guild?.ownerId !== interaction.user.id) return interaction.reply({ content: '❌ Nur der Serverbesitzer darf das Setup benutzen.', ephemeral: true });
+      if (interaction.user.id !== SETUP_USER_ID) return interaction.reply({ content: '❌ Du darfst das Setup nicht benutzen.', ephemeral: true });
       const parts = interaction.customId.split('_');
-      const commandName = parts[2];
+      const commandName = parts[3];
       const roleId = interaction.values[0];
       commandRoles.set(`${interaction.guildId}:${commandName}`, roleId);
       const role = interaction.guild.roles.cache.get(roleId);
-      return interaction.update({ content: `✅ **/${commandName}** darf jetzt die Rolle **${role?.name ?? 'Unbekannt'}** benutzen.\n\nDer Serverbesitzer kann den Command weiterhin immer benutzen.`, embeds: [], components: [] });
+      return interaction.update({ content: `✅ **/${commandName}** darf jetzt die Rolle **${role?.name ?? 'Unbekannt'}** benutzen.\n\nDu kannst den Command weiterhin benutzen.`, embeds: [], components: [] });
     }
 
     if (interaction.customId.startsWith('ausnach_menu_')) {
