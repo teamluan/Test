@@ -1,5 +1,8 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, EmbedBuilder, REST, Routes, PermissionFlagsBits, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+const {
+  Client, GatewayIntentBits, EmbedBuilder, REST, Routes, PermissionFlagsBits,
+  ActionRowBuilder, StringSelectMenuBuilder, RoleSelectMenuBuilder
+} = require('discord.js');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 
@@ -25,8 +28,12 @@ const commands = [{
     { name: 'option5', description: 'Text/Wort für Auswahl 5', type: 3, required: false },
     { name: 'option5interaktion', description: 'Antwort bei Auswahl 5', type: 3, required: false }
   ]
+}, {
+  name: 'setup', description: 'Richtet die Rollen für die Bot-Commands ein.'
 }];
 
+// Keine Datenbank: Einstellungen bleiben bis zum nächsten Bot-Neustart im Speicher.
+const commandRoles = new Map();
 const ausnachResponses = new Map();
 
 client.once('ready', async () => {
@@ -44,10 +51,52 @@ function colorValue(value) {
   return color.startsWith('#') ? color : `#${color}`;
 }
 
+function hasCommandAccess(interaction, commandName) {
+  if (interaction.guild?.ownerId === interaction.user.id) return true;
+  const roleId = commandRoles.get(`${interaction.guildId}:${commandName}`);
+  if (!roleId) return false;
+  return interaction.member.roles.cache.has(roleId);
+}
+
+function setupPanel(guildId) {
+  const commandMenu = new StringSelectMenuBuilder()
+    .setCustomId(`setup_command_${guildId}`)
+    .setPlaceholder('1. Command auswählen ...')
+    .addOptions(
+      { label: '/nachricht', value: 'nachricht', description: 'Berechtigte Rolle für /nachricht festlegen' },
+      { label: '/ausnach', value: 'ausnach', description: 'Berechtigte Rolle für /ausnach festlegen' }
+    );
+
+  const roleMenu = new RoleSelectMenuBuilder()
+    .setCustomId(`setup_role_${guildId}`)
+    .setPlaceholder('2. Rolle auswählen ...')
+    .setMinValues(1).setMaxValues(1);
+
+  return [
+    new ActionRowBuilder().addComponents(commandMenu),
+    new ActionRowBuilder().addComponents(roleMenu)
+  ];
+}
+
 client.on('interactionCreate', async interaction => {
   if (interaction.isChatInputCommand()) {
-    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages)) {
-      return interaction.reply({ content: '❌ Du brauchst die Berechtigung **Nachrichten verwalten**.', ephemeral: true });
+    // /setup darf ausschließlich der Serverbesitzer benutzen.
+    if (interaction.commandName === 'setup') {
+      if (!interaction.guild || interaction.guild.ownerId !== interaction.user.id) {
+        return interaction.reply({ content: '❌ Nur der **Serverbesitzer** darf `/setup` benutzen.', ephemeral: true });
+      }
+
+      const embed = new EmbedBuilder()
+        .setTitle('⚙️ Bot Setup')
+        .setDescription('Hier kannst du festlegen, **welche Rolle welchen Command benutzen darf**.\n\n1️⃣ Command auswählen\n2️⃣ Rolle auswählen\n\nDer Serverbesitzer kann die Commands immer benutzen.')
+        .setColor('#5865F2')
+        .setTimestamp();
+
+      return interaction.reply({ embeds: [embed], components: setupPanel(interaction.guildId), ephemeral: false });
+    }
+
+    if (!interaction.guild || !hasCommandAccess(interaction, interaction.commandName)) {
+      return interaction.reply({ content: '❌ Du hast keine Berechtigung, diesen Command zu benutzen. Bitte wende dich an den Serverbesitzer.', ephemeral: true });
     }
 
     if (interaction.commandName === 'nachricht') {
@@ -75,13 +124,10 @@ client.on('interactionCreate', async interaction => {
         }
         if (label && response) options.push({ number: i, label, response });
       }
-
       const menuId = `ausnach_menu_${interaction.user.id}_${Date.now()}`;
       const menu = new StringSelectMenuBuilder()
-        .setCustomId(menuId)
-        .setPlaceholder('Wähle eine Option aus ...')
+        .setCustomId(menuId).setPlaceholder('Wähle eine Option aus ...')
         .addOptions(options.map(option => ({ label: option.label.slice(0, 100), value: String(option.number), description: 'Klicke hier für die Interaktion' })));
-
       const embed = new EmbedBuilder().setDescription(mainText).setColor('#5865F2').setTimestamp();
       await interaction.channel.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)] });
       ausnachResponses.set(menuId, options);
@@ -89,13 +135,28 @@ client.on('interactionCreate', async interaction => {
     }
   }
 
+  if (interaction.isStringSelectMenu() && interaction.customId.startsWith('setup_command_')) {
+    if (interaction.guild?.ownerId !== interaction.user.id) return interaction.reply({ content: '❌ Nur der Serverbesitzer darf das Setup ändern.', ephemeral: true });
+    const commandName = interaction.values[0];
+    const roleMenu = new RoleSelectMenuBuilder().setCustomId(`setup_role_${interaction.guildId}_${commandName}`).setPlaceholder(`Rolle für /${commandName} auswählen ...`).setMinValues(1).setMaxValues(1);
+    return interaction.update({ content: `**/${commandName}** ausgewählt. Jetzt die Rolle auswählen, die den Command benutzen darf:`, components: [new ActionRowBuilder().addComponents(roleMenu)] });
+  }
+
+  if (interaction.isRoleSelectMenu() && interaction.customId.startsWith('setup_role_')) {
+    if (interaction.guild?.ownerId !== interaction.user.id) return interaction.reply({ content: '❌ Nur der Serverbesitzer darf das Setup ändern.', ephemeral: true });
+    const parts = interaction.customId.split('_');
+    const commandName = parts[3];
+    const roleId = interaction.values[0];
+    commandRoles.set(`${interaction.guildId}:${commandName}`, roleId);
+    const role = interaction.guild.roles.cache.get(roleId);
+    return interaction.update({ content: `✅ **/${commandName}** darf jetzt von ${role} benutzt werden.\n\nDer Serverbesitzer kann den Command weiterhin immer benutzen.`, components: setupPanel(interaction.guildId) });
+  }
+
   if (interaction.isStringSelectMenu() && interaction.customId.startsWith('ausnach_menu_')) {
     const options = ausnachResponses.get(interaction.customId);
     if (!options) return interaction.reply({ content: '❌ Diese Auswahl ist nicht mehr verfügbar.', ephemeral: true });
     const selected = options.find(option => String(option.number) === interaction.values[0]);
     if (!selected) return interaction.reply({ content: '❌ Auswahl nicht gefunden.', ephemeral: true });
-
-    // Nur der Benutzer, der die Auswahl anklickt, sieht diese Antwort.
     return interaction.reply({ content: selected.response, ephemeral: true });
   }
 });
