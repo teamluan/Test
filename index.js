@@ -24,19 +24,18 @@ const commands = [
     { name: 'option4interaktion', description: 'Antwort bei Auswahl 4', type: 3, required: false },
     { name: 'option5', description: 'Text/Wort für Auswahl 5', type: 3, required: false },
     { name: 'option5interaktion', description: 'Antwort bei Auswahl 5', type: 3, required: false }
+  ]},
+  { name: 'clear', description: 'Löscht eine Anzahl von Nachrichten aus diesem Channel.', options: [
+    { name: 'anzahl', description: 'Anzahl der zu löschenden Nachrichten (1-100)', type: 4, required: true, min_value: 1, max_value: 100 }
   ]}
 ];
 
 const ausnachResponses = new Map();
 
 function hasCommandAccess(interaction, commandName) {
-  // Die Setup-Person darf die Commands immer benutzen.
   if (interaction.user.id === SETUP_USER_ID) return true;
-
-  // Solange für diesen Command keine Rolle eingerichtet wurde, ist er gesperrt.
   const roleId = commandRoles.get(`${interaction.guildId}:${commandName}`);
   if (!roleId) return false;
-
   return !!interaction.member?.roles?.cache?.has(roleId);
 }
 
@@ -61,33 +60,21 @@ client.on('interactionCreate', async interaction => {
   try {
     if (interaction.isChatInputCommand()) {
       if (interaction.commandName === 'setup') {
-        if (interaction.user.id !== SETUP_USER_ID) {
-          return interaction.reply({ content: '❌ Du darfst `/setup` nicht benutzen.', ephemeral: true });
-        }
-
-        const embed = new EmbedBuilder()
-          .setTitle('⚙️ Bot Setup')
-          .setDescription('Wähle einen Command aus und danach die Rolle, die ihn benutzen darf.')
-          .addFields(
-            { name: '/nachricht', value: 'Embed-Nachrichten senden' },
-            { name: '/ausnach', value: 'Auswahl-Nachrichten erstellen' }
-          )
-          .setColor('#5865F2');
-
-        const menu = new StringSelectMenuBuilder()
-          .setCustomId('setup_command')
-          .setPlaceholder('Command auswählen ...')
-          .addOptions([
-            { label: '/nachricht', value: 'nachricht', description: 'Rolle für /nachricht festlegen' },
-            { label: '/ausnach', value: 'ausnach', description: 'Rolle für /ausnach festlegen' }
-          ]);
-
+        if (interaction.user.id !== SETUP_USER_ID) return interaction.reply({ content: '❌ Du darfst `/setup` nicht benutzen.', ephemeral: true });
+        const embed = new EmbedBuilder().setTitle('⚙️ Bot Setup').setDescription('Wähle einen Command aus und danach die Rolle, die ihn benutzen darf.').addFields(
+          { name: '/nachricht', value: 'Embed-Nachrichten senden' },
+          { name: '/ausnach', value: 'Auswahl-Nachrichten erstellen' },
+          { name: '/clear', value: 'Nachrichten löschen' }
+        ).setColor('#5865F2');
+        const menu = new StringSelectMenuBuilder().setCustomId('setup_command').setPlaceholder('Command auswählen ...').addOptions([
+          { label: '/nachricht', value: 'nachricht', description: 'Rolle für /nachricht festlegen' },
+          { label: '/ausnach', value: 'ausnach', description: 'Rolle für /ausnach festlegen' },
+          { label: '/clear', value: 'clear', description: 'Rolle für /clear festlegen' }
+        ]);
         return interaction.reply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)], ephemeral: true });
       }
 
-      if (!hasCommandAccess(interaction, interaction.commandName)) {
-        return interaction.reply({ content: '❌ Dieser Command wurde noch nicht eingerichtet oder du hast nicht die dafür festgelegte Rolle.', ephemeral: true });
-      }
+      if (!hasCommandAccess(interaction, interaction.commandName)) return interaction.reply({ content: '❌ Dieser Command wurde noch nicht eingerichtet oder du hast nicht die dafür festgelegte Rolle.', ephemeral: true });
 
       if (interaction.commandName === 'nachricht') {
         const text = interaction.options.getString('text', true);
@@ -95,10 +82,7 @@ client.on('interactionCreate', async interaction => {
         const farbe = colorValue(interaction.options.getString('farbe'));
         if (!farbe) return interaction.reply({ content: '❌ Ungültige Farbe. Verwende z.B. `#ff0000`.', ephemeral: true });
         const embed = new EmbedBuilder().setDescription(text).setColor(farbe).setTimestamp();
-        if (bild) {
-          try { new URL(bild); embed.setImage(bild); }
-          catch { return interaction.reply({ content: '❌ Die Bild-URL ist ungültig.', ephemeral: true }); }
-        }
+        if (bild) { try { new URL(bild); embed.setImage(bild); } catch { return interaction.reply({ content: '❌ Die Bild-URL ist ungültig.', ephemeral: true }); } }
         await interaction.channel.send({ embeds: [embed] });
         return interaction.reply({ content: '✅ Nachricht wurde gesendet.', ephemeral: true });
       }
@@ -118,6 +102,13 @@ client.on('interactionCreate', async interaction => {
         await interaction.channel.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)] });
         ausnachResponses.set(menuId, options);
         return interaction.reply({ content: '✅ Auswahl-Nachricht wurde gesendet.', ephemeral: true });
+      }
+
+      if (interaction.commandName === 'clear') {
+        const amount = interaction.options.getInteger('anzahl', true);
+        if (!interaction.channel?.isTextBased() || !interaction.channel.bulkDelete) return interaction.reply({ content: '❌ In diesem Channel können keine Nachrichten gelöscht werden.', ephemeral: true });
+        const deleted = await interaction.channel.bulkDelete(amount, true);
+        return interaction.reply({ content: `🧹 **${deleted.size}** Nachrichten wurden gelöscht.`, ephemeral: true });
       }
     }
 
