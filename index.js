@@ -1,10 +1,9 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, EmbedBuilder, REST, Routes, PermissionFlagsBits, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, REST, Routes, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 const commandRoles = new Map();
 const SETUP_USER_ID = '1177592138968604675';
-const GUILD_ID = '1177592138968604675';
 
 const commands = [
   { name: 'setup', description: 'Bot-Commands und erlaubte Rollen verwalten.' },
@@ -40,8 +39,9 @@ client.once('ready', async () => {
   console.log(`Bot online als ${client.user.tag}`);
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   try {
-    await rest.put(Routes.applicationGuildCommands(client.user.id, GUILD_ID), { body: commands });
-    console.log(`Slash-Commands für Server ${GUILD_ID} registriert.`);
+    // Global registrieren, weil die angegebene ID die Benutzer-ID und nicht die Server-ID ist.
+    await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+    console.log('Slash-Commands global registriert.');
   } catch (error) { console.error('Fehler beim Registrieren der Commands:', error); }
 });
 
@@ -54,9 +54,7 @@ function colorValue(value) {
 client.on('interactionCreate', async interaction => {
   if (interaction.isChatInputCommand()) {
     if (interaction.commandName === 'setup') {
-      if (interaction.user.id !== SETUP_USER_ID) {
-        return interaction.reply({ content: '❌ Du darfst `/setup` nicht benutzen.', ephemeral: true });
-      }
+      if (interaction.user.id !== SETUP_USER_ID) return interaction.reply({ content: '❌ Du darfst `/setup` nicht benutzen.', ephemeral: true });
       const embed = new EmbedBuilder().setTitle('⚙️ Bot Setup').setDescription('Wähle einen Command aus und danach die Rolle, die ihn benutzen darf.').addFields(
         { name: '/nachricht', value: 'Embed-Nachrichten senden' },
         { name: '/ausnach', value: 'Auswahl-Nachrichten erstellen' }
@@ -68,9 +66,7 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)], ephemeral: true });
     }
 
-    if (!hasCommandAccess(interaction, interaction.commandName)) {
-      return interaction.reply({ content: '❌ Du hast keine Rolle, die für diesen Command freigeschaltet ist.', ephemeral: true });
-    }
+    if (!hasCommandAccess(interaction, interaction.commandName)) return interaction.reply({ content: '❌ Du hast keine Rolle, die für diesen Command freigeschaltet ist.', ephemeral: true });
 
     if (interaction.commandName === 'nachricht') {
       const text = interaction.options.getString('text', true);
