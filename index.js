@@ -43,8 +43,12 @@ client.once('ready', async () => {
   console.log(`Bot online als ${client.user.tag}`);
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   try {
-    await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-    console.log('Slash-Commands global registriert.');
+    // Server-spezifisch registrieren: /clear erscheint sofort nach Bot-Neustart.
+    const guilds = await client.guilds.fetch();
+    for (const [guildId] of guilds) {
+      await rest.put(Routes.applicationGuildCommands(client.user.id, guildId), { body: commands });
+    }
+    console.log('Slash-Commands für die Server registriert.');
   } catch (error) {
     console.error('Fehler beim Registrieren der Commands:', error);
   }
