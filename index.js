@@ -7,11 +7,6 @@ const {
   Routes,
   PermissionFlagsBits,
   ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle,
   StringSelectMenuBuilder
 } = require('discord.js');
 
@@ -31,12 +26,22 @@ const commands = [
   },
   {
     name: 'ausnach',
-    description: 'Erstellt eine Auswahl-Nachricht mit bis zu 5 Auswahlpunkten.'
+    description: 'Erstellt eine Nachricht mit bis zu 5 auswählbaren Optionen.',
+    options: [
+      { name: 'nachricht', description: 'Die Hauptnachricht', type: 3, required: true },
+      { name: 'option1', description: 'Text/Wort für Auswahl 1', type: 3, required: true },
+      { name: 'option1interaktion', description: 'Antwort bei Auswahl 1', type: 3, required: true },
+      { name: 'option2', description: 'Text/Wort für Auswahl 2', type: 3, required: false },
+      { name: 'option2interaktion', description: 'Antwort bei Auswahl 2', type: 3, required: false },
+      { name: 'option3', description: 'Text/Wort für Auswahl 3', type: 3, required: false },
+      { name: 'option3interaktion', description: 'Antwort bei Auswahl 3', type: 3, required: false },
+      { name: 'option4', description: 'Text/Wort für Auswahl 4', type: 3, required: false },
+      { name: 'option4interaktion', description: 'Antwort bei Auswahl 4', type: 3, required: false },
+      { name: 'option5', description: 'Text/Wort für Auswahl 5', type: 3, required: false },
+      { name: 'option5interaktion', description: 'Antwort bei Auswahl 5', type: 3, required: false }
+    ]
   }
 ];
-
-// Temporäre Auswahldaten – keine Datenbank nötig.
-const ausnachSessions = new Map();
 
 client.once('ready', async () => {
   console.log(`Bot online als ${client.user.tag}`);
@@ -54,22 +59,6 @@ function colorValue(value) {
   const color = value || '#5865F2';
   if (!/^#?[0-9A-Fa-f]{6}$/.test(color)) return null;
   return color.startsWith('#') ? color : `#${color}`;
-}
-
-function selectionButtons(sessionId, disabled = false) {
-  return [
-    new ActionRowBuilder().addComponents(
-      ...[1, 2, 3, 4, 5].map(i => new ButtonBuilder()
-        .setCustomId(`ausnach_slot_${sessionId}_${i}`)
-        .setLabel(`${i}`)
-        .setStyle(ButtonStyle.Primary)
-        .setDisabled(disabled || false))
-    ),
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`ausnach_finish_${sessionId}`).setLabel('✅ Fertig').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId(`ausnach_cancel_${sessionId}`).setLabel('❌ Abbrechen').setStyle(ButtonStyle.Danger)
-    )
-  ];
 }
 
 client.on('interactionCreate', async interaction => {
@@ -103,152 +92,62 @@ client.on('interactionCreate', async interaction => {
     }
 
     if (interaction.commandName === 'ausnach') {
-      const modal = new ModalBuilder()
-        .setCustomId(`ausnach_start_${interaction.user.id}`)
-        .setTitle('Auswahl-Nachricht erstellen');
+      const mainText = interaction.options.getString('nachricht', true);
+      const options = [];
 
-      const textInput = new TextInputBuilder()
-        .setCustomId('ausnach_text')
-        .setLabel('Nachricht')
-        .setPlaceholder('Schreibe hier die Nachricht...')
-        .setStyle(TextInputStyle.Paragraph)
-        .setRequired(true)
-        .setMaxLength(4000);
+      for (let i = 1; i <= 5; i++) {
+        const label = interaction.options.getString(`option${i}`);
+        const response = interaction.options.getString(`option${i}interaktion`);
 
-      modal.addComponents(new ActionRowBuilder().addComponents(textInput));
-      return interaction.showModal(modal);
-    }
-  }
+        if (label && !response || !label && response) {
+          return interaction.reply({
+            content: `❌ Option ${i}: Du musst **option${i}** und **option${i}interaktion** zusammen angeben.`,
+            ephemeral: true
+          });
+        }
 
-  if (interaction.isModalSubmit() && interaction.customId.startsWith('ausnach_start_')) {
-    const sessionId = `${interaction.user.id}_${Date.now()}`;
-    ausnachSessions.set(sessionId, {
-      userId: interaction.user.id,
-      channelId: interaction.channelId,
-      text: interaction.fields.getTextInputValue('ausnach_text'),
-      options: {}
-    });
+        if (label && response) options.push({ number: i, label, response });
+      }
 
-    return interaction.reply({
-      content: '✅ Nachricht gespeichert!\n\nWähle jetzt bis zu **5** Punkte aus. Bei jedem Punkt kannst du anschließend **Nachricht, Bild oder Datei** auswählen.',
-      components: selectionButtons(sessionId),
-      ephemeral: true
-    });
-  }
-
-  if (interaction.isButton()) {
-    const parts = interaction.customId.split('_');
-    if (parts[0] !== 'ausnach') return;
-
-    const action = parts[1];
-    const sessionId = parts[2];
-    const slot = parts[3];
-    const session = ausnachSessions.get(sessionId);
-
-    if (!session || session.userId !== interaction.user.id) {
-      return interaction.reply({ content: '❌ Diese Auswahl gehört nicht zu dir oder ist abgelaufen.', ephemeral: true });
-    }
-
-    if (action === 'cancel') {
-      ausnachSessions.delete(sessionId);
-      return interaction.update({ content: '❌ Erstellung abgebrochen.', components: [] });
-    }
-
-    if (action === 'finish') {
-      const count = Object.keys(session.options).length;
-      if (count < 1) return interaction.reply({ content: '❌ Du musst mindestens einen Auswahlpunkt erstellen.', ephemeral: true });
+      const menu = new StringSelectMenuBuilder()
+        .setCustomId(`ausnach_menu_${interaction.user.id}_${Date.now()}`)
+        .setPlaceholder('Wähle eine Option aus ...')
+        .addOptions(options.map(option => ({
+          label: option.label.slice(0, 100),
+          value: String(option.number),
+          description: 'Klicke hier für die Interaktion'
+        })));
 
       const embed = new EmbedBuilder()
-        .setDescription(session.text)
+        .setDescription(mainText)
         .setColor('#5865F2')
         .setTimestamp();
 
-      const lines = Object.entries(session.options).map(([number, data]) => {
-        const icon = data.type === 'bild' ? '🖼️' : data.type === 'datei' ? '📎' : '💬';
-        return `${icon} **${number}. ${data.name}**\n${data.value}`;
+      await interaction.channel.send({
+        embeds: [embed],
+        components: [new ActionRowBuilder().addComponents(menu)]
       });
 
-      embed.addFields({ name: 'Auswahl', value: lines.join('\n\n').slice(0, 1024) });
-      await interaction.channel.send({ embeds: [embed] });
-      ausnachSessions.delete(sessionId);
-      return interaction.update({ content: '✅ Auswahl-Nachricht wurde gesendet.', components: [] });
+      // Die Antworten werden nur für die laufende Nachricht im Speicher gehalten.
+      client.ausnachResponses ??= new Map();
+      client.ausnachResponses.set(menu.data.custom_id, options);
+
+      return interaction.reply({ content: '✅ Auswahl-Nachricht wurde gesendet.', ephemeral: true });
     }
-
-    const select = new StringSelectMenuBuilder()
-      .setCustomId(`ausnach_type_${sessionId}_${slot}`)
-      .setPlaceholder(`Typ für Auswahl ${slot} wählen`)
-      .addOptions(
-        { label: 'Nachricht', description: 'Text für diesen Auswahlpunkt', value: 'nachricht', emoji: '💬' },
-        { label: 'Bild', description: 'Bild-URL für diesen Auswahlpunkt', value: 'bild', emoji: '🖼️' },
-        { label: 'Datei', description: 'Datei-URL für diesen Auswahlpunkt', value: 'datei', emoji: '📎' }
-      );
-
-    return interaction.reply({
-      content: `**Auswahl ${slot}:** Was möchtest du hinzufügen?`,
-      components: [new ActionRowBuilder().addComponents(select)],
-      ephemeral: true
-    });
   }
 
-  if (interaction.isStringSelectMenu() && interaction.customId.startsWith('ausnach_type_')) {
-    const [, , sessionId, slot] = interaction.customId.split('_');
-    const session = ausnachSessions.get(sessionId);
-
-    if (!session || session.userId !== interaction.user.id) {
-      return interaction.reply({ content: '❌ Diese Auswahl ist abgelaufen.', ephemeral: true });
+  if (interaction.isStringSelectMenu() && interaction.customId.startsWith('ausnach_menu_')) {
+    const options = client.ausnachResponses?.get(interaction.customId);
+    if (!options) {
+      return interaction.reply({ content: '❌ Diese Auswahl ist nicht mehr verfügbar.', ephemeral: true });
     }
 
-    const type = interaction.values[0];
-    const modal = new ModalBuilder()
-      .setCustomId(`ausnach_value_${sessionId}_${slot}_${type}`)
-      .setTitle(`Auswahl ${slot} – ${type}`);
+    const selected = options.find(option => String(option.number) === interaction.values[0]);
+    if (!selected) return interaction.reply({ content: '❌ Auswahl nicht gefunden.', ephemeral: true });
 
-    const nameInput = new TextInputBuilder()
-      .setCustomId('ausnach_name')
-      .setLabel('Name der Auswahl')
-      .setPlaceholder(`z.B. Option ${slot}`)
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true)
-      .setMaxLength(100);
-
-    const valueInput = new TextInputBuilder()
-      .setCustomId('ausnach_value')
-      .setLabel(type === 'nachricht' ? 'Nachricht' : `${type === 'bild' ? 'Bild' : 'Datei'}-URL`)
-      .setPlaceholder(type === 'nachricht' ? 'Text...' : 'https://...')
-      .setStyle(TextInputStyle.Paragraph)
-      .setRequired(true)
-      .setMaxLength(2000);
-
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(nameInput),
-      new ActionRowBuilder().addComponents(valueInput)
-    );
-
-    return interaction.showModal(modal);
-  }
-
-  if (interaction.isModalSubmit() && interaction.customId.startsWith('ausnach_value_')) {
-    const [, , sessionId, slot, type] = interaction.customId.split('_');
-    const session = ausnachSessions.get(sessionId);
-
-    if (!session || session.userId !== interaction.user.id) {
-      return interaction.reply({ content: '❌ Diese Auswahl ist abgelaufen.', ephemeral: true });
-    }
-
-    const name = interaction.fields.getTextInputValue('ausnach_name');
-    const value = interaction.fields.getTextInputValue('ausnach_value');
-
-    if (type !== 'nachricht') {
-      try { new URL(value); } catch {
-        return interaction.reply({ content: '❌ Bitte eine gültige URL angeben.', ephemeral: true });
-      }
-    }
-
-    session.options[slot] = { name, value, type };
     return interaction.reply({
-      content: `✅ **Auswahl ${slot}** wurde gespeichert. Du kannst weitere Punkte hinzufügen oder auf **Fertig** klicken.`,
-      components: selectionButtons(sessionId),
-      ephemeral: true
+      content: selected.response,
+      ephemeral: false
     });
   }
 });
