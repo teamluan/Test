@@ -1,156 +1,62 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, EmbedBuilder, REST, Routes, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
-
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 const commandRoles = new Map();
 const SETUP_USER_ID = '1177592138968604675';
-
-const commands = [
-  { name: 'setup', description: 'Bot-Commands und erlaubte Rollen verwalten.' },
-  { name: 'nachricht', description: 'Sendet eine Nachricht als Embed in diesen Channel.', options: [
-    { name: 'text', description: 'Text der Embed-Nachricht', type: 3, required: true },
-    { name: 'bild', description: 'Bild-URL (optional)', type: 3, required: false },
-    { name: 'farbe', description: 'Embed-Farbe als HEX, z.B. #ff0000', type: 3, required: false }
-  ]},
-  { name: 'ausnach', description: 'Erstellt eine Nachricht mit bis zu 5 auswählbaren Optionen.', options: [
-    { name: 'nachricht', description: 'Die Hauptnachricht', type: 3, required: true },
-    { name: 'option1', description: 'Text/Wort für Auswahl 1', type: 3, required: true },
-    { name: 'option1interaktion', description: 'Antwort bei Auswahl 1', type: 3, required: true },
-    { name: 'option2', description: 'Text/Wort für Auswahl 2', type: 3, required: false },
-    { name: 'option2interaktion', description: 'Antwort bei Auswahl 2', type: 3, required: false },
-    { name: 'option3', description: 'Text/Wort für Auswahl 3', type: 3, required: false },
-    { name: 'option3interaktion', description: 'Antwort bei Auswahl 3', type: 3, required: false },
-    { name: 'option4', description: 'Text/Wort für Auswahl 4', type: 3, required: false },
-    { name: 'option4interaktion', description: 'Antwort bei Auswahl 4', type: 3, required: false },
-    { name: 'option5', description: 'Text/Wort für Auswahl 5', type: 3, required: false },
-    { name: 'option5interaktion', description: 'Antwort bei Auswahl 5', type: 3, required: false }
-  ]},
-  { name: 'clear', description: 'Löscht eine Anzahl von Nachrichten aus diesem Channel.', options: [
-    { name: 'anzahl', description: 'Anzahl der zu löschenden Nachrichten (1-100)', type: 4, required: true, min_value: 1, max_value: 100 }
-  ]}
-];
-
 const ausnachResponses = new Map();
 
-function hasCommandAccess(interaction, commandName) {
-  if (interaction.user.id === SETUP_USER_ID) return true;
-  const roleId = commandRoles.get(`${interaction.guildId}:${commandName}`);
-  if (!roleId) return false;
-  return !!interaction.member?.roles?.cache?.has(roleId);
+const commands = [
+{name:'setup',description:'Bot-Commands und Rollen verwalten.'},
+{name:'nachricht',description:'Embed-Nachricht senden.',options:[{name:'text',description:'Text',type:3,required:true},{name:'bild',description:'Bild-URL',type:3,required:false},{name:'farbe',description:'HEX-Farbe',type:3,required:false}]},
+{name:'ausnach',description:'Auswahl-Nachricht erstellen.',options:[{name:'nachricht',description:'Hauptnachricht',type:3,required:true},{name:'option1',description:'Option 1',type:3,required:true},{name:'option1interaktion',description:'Antwort 1',type:3,required:true},{name:'option2',description:'Option 2',type:3,required:false},{name:'option2interaktion',description:'Antwort 2',type:3,required:false},{name:'option3',description:'Option 3',type:3,required:false},{name:'option3interaktion',description:'Antwort 3',type:3,required:false},{name:'option4',description:'Option 4',type:3,required:false},{name:'option4interaktion',description:'Antwort 4',type:3,required:false},{name:'option5',description:'Option 5',type:3,required:false},{name:'option5interaktion',description:'Antwort 5',type:3,required:false}]},
+{name:'clear',description:'Nachrichten löschen.',options:[{name:'anzahl',description:'1-100',type:4,required:true,min_value:1,max_value:100}]},
+{name:'kick',description:'Benutzer kicken.',options:[{name:'user',description:'Benutzer',type:6,required:true},{name:'grund',description:'Grund',type:3,required:false}]},
+{name:'ban',description:'Benutzer bannen.',options:[{name:'user',description:'Benutzer',type:6,required:true},{name:'grund',description:'Grund',type:3,required:false}]},
+{name:'unban',description:'Benutzer entbannen.',options:[{name:'userid',description:'Benutzer-ID',type:3,required:true}]},
+{name:'timeout',description:'Benutzer timeouten.',options:[{name:'user',description:'Benutzer',type:6,required:true},{name:'minuten',description:'Minuten',type:4,required:true,min_value:1,max_value:40320},{name:'grund',description:'Grund',type:3,required:false}]},
+{name:'untimeout',description:'Timeout entfernen.',options:[{name:'user',description:'Benutzer',type:6,required:true}]},
+{name:'userinfo',description:'Benutzerinformationen.',options:[{name:'user',description:'Benutzer',type:6,required:false}]},
+{name:'avatar',description:'Profilbild anzeigen.',options:[{name:'user',description:'Benutzer',type:6,required:false}]},
+{name:'serverinfo',description:'Serverinformationen.'},
+{name:'say',description:'Bot sendet Text.',options:[{name:'text',description:'Text',type:3,required:true}]},
+{name:'announce',description:'Ankündigung als Embed.',options:[{name:'text',description:'Text',type:3,required:true}]},
+{name:'slowmode',description:'Slowmode einstellen.',options:[{name:'sekunden',description:'0-21600 Sekunden',type:4,required:true,min_value:0,max_value:21600}]},
+{name:'lock',description:'Channel sperren.'},
+{name:'unlock',description:'Channel entsperren.'},
+{name:'poll',description:'Umfrage erstellen.',options:[{name:'frage',description:'Frage',type:3,required:true},{name:'option1',description:'Option 1',type:3,required:true},{name:'option2',description:'Option 2',type:3,required:true},{name:'option3',description:'Option 3',type:3,required:false},{name:'option4',description:'Option 4',type:3,required:false},{name:'option5',description:'Option 5',type:3,required:false}]},
+{name:'dm',description:'DM an Benutzer senden.',options:[{name:'user',description:'Benutzer',type:6,required:true},{name:'text',description:'Text',type:3,required:true}]},
+{name:'nick',description:'Nickname ändern.',options:[{name:'user',description:'Benutzer',type:6,required:true},{name:'name',description:'Neuer Name',type:3,required:true}]}
+];
+function hasAccess(i,c){if(i.user.id===SETUP_USER_ID)return true;const r=commandRoles.get(`${i.guildId}:${c}`);return !!r&&!!i.member?.roles?.cache?.has(r)}
+function color(v){v=v||'#5865F2';return /^#?[0-9A-Fa-f]{6}$/.test(v)?(v.startsWith('#')?v:`#${v}`):null}
+function canMod(i,t){return t&&t.id!==i.user.id&&t.id!==client.user.id&&i.member.roles.highest.position>t.roles.highest.position}
+client.once('ready',async()=>{const rest=new REST({version:'10'}).setToken(process.env.DISCORD_TOKEN);try{await rest.put(Routes.applicationCommands(client.user.id),{body:commands});console.log(`Bot online als ${client.user.tag}`)}catch(e){console.error(e)}});
+client.on('interactionCreate',async i=>{try{
+if(i.isChatInputCommand()){
+if(i.commandName==='setup'){if(i.user.id!==SETUP_USER_ID)return i.reply({content:'❌ Kein Zugriff.',ephemeral:true});const menu=new StringSelectMenuBuilder().setCustomId('setup_command').setPlaceholder('Command auswählen ...').addOptions(commands.filter(c=>c.name!=='setup').map(c=>({label:`/${c.name}`.slice(0,100),value:c.name,description:c.description.slice(0,100)})));return i.reply({embeds:[new EmbedBuilder().setTitle('⚙️ Bot Setup').setDescription('Command auswählen und danach Rolle festlegen.').setColor('#5865F2')],components:[new ActionRowBuilder().addComponents(menu)],ephemeral:true})}
+if(!hasAccess(i,i.commandName))return i.reply({content:'❌ Command nicht eingerichtet oder keine passende Rolle.',ephemeral:true});
+if(i.commandName==='nachricht'){const t=i.options.getString('text',true),b=i.options.getString('bild'),co=color(i.options.getString('farbe'));if(!co)return i.reply({content:'❌ Ungültige HEX-Farbe.',ephemeral:true});const e=new EmbedBuilder().setDescription(t).setColor(co);if(b){try{new URL(b);e.setImage(b)}catch{return i.reply({content:'❌ Ungültige Bild-URL.',ephemeral:true})}}await i.channel.send({embeds:[e]});return i.reply({content:'✅ Gesendet.',ephemeral:true})}
+if(i.commandName==='ausnach'){const main=i.options.getString('nachricht',true),o=[];for(let n=1;n<=5;n++){const l=i.options.getString(`option${n}`),r=i.options.getString(`option${n}interaktion`);if((l&&!r)||(!l&&r))return i.reply({content:`❌ Option ${n} unvollständig.`,ephemeral:true});if(l&&r)o.push({number:n,label:l,response:r})}const id=`ausnach_${i.user.id}_${Date.now()}`,m=new StringSelectMenuBuilder().setCustomId(id).setPlaceholder('Option auswählen ...').addOptions(o.map(x=>({label:x.label.slice(0,100),value:String(x.number),description:'Interaktion anzeigen'})));await i.channel.send({embeds:[new EmbedBuilder().setDescription(main).setColor('#5865F2')],components:[new ActionRowBuilder().addComponents(m)]});ausnachResponses.set(id,o);return i.reply({content:'✅ Gesendet.',ephemeral:true})}
+if(i.commandName==='clear'){const n=i.options.getInteger('anzahl',true),d=await i.channel.bulkDelete(n,true);return i.reply({content:`🧹 ${d.size} Nachrichten gelöscht.`,ephemeral:true})}
+if(i.commandName==='kick'||i.commandName==='ban'){const t=i.options.getMember('user'),g=i.options.getString('grund')||'Kein Grund angegeben';if(!canMod(i,t))return i.reply({content:'❌ Dieser Benutzer kann nicht moderiert werden.',ephemeral:true});if(i.commandName==='kick')await t.kick(g);else await t.ban({reason:g});return i.reply({content:`✅ ${t.user.tag} wurde ${i.commandName==='kick'?'gekickt':'gebannt'}.`,ephemeral:true})}
+if(i.commandName==='unban'){const id=i.options.getString('userid',true);await i.guild.members.unban(id);return i.reply({content:'✅ Benutzer entbannt.',ephemeral:true})}
+if(i.commandName==='timeout'||i.commandName==='untimeout'){const t=i.options.getMember('user');if(!canMod(i,t))return i.reply({content:'❌ Nicht möglich.',ephemeral:true});if(i.commandName==='timeout'){const m=i.options.getInteger('minuten',true);await t.timeout(m*60000,i.options.getString('grund')||'Kein Grund');return i.reply({content:`✅ Timeout für ${m} Minuten.`,ephemeral:true})}await t.timeout(null);return i.reply({content:'✅ Timeout entfernt.',ephemeral:true})}
+if(i.commandName==='userinfo'){const u=i.options.getUser('user')||i.user,m=i.guild.members.cache.get(u.id);return i.reply({embeds:[new EmbedBuilder().setTitle(`👤 ${u.tag}`).setThumbnail(u.displayAvatarURL({size:256})).addFields({name:'ID',value:u.id},{name:'Account',value:`<t:${Math.floor(u.createdTimestamp/1000)}:F>`},{name:'Serverbeitritt',value:m?`<t:${Math.floor(m.joinedTimestamp/1000)}:F>`:'Unbekannt'}).setColor('#5865F2')],ephemeral:true})}
+if(i.commandName==='avatar'){const u=i.options.getUser('user')||i.user;return i.reply({embeds:[new EmbedBuilder().setTitle(`🖼️ Avatar von ${u.tag}`).setImage(u.displayAvatarURL({size:1024,dynamic:true})).setColor('#5865F2')]})}
+if(i.commandName==='serverinfo'){const g=i.guild;return i.reply({embeds:[new EmbedBuilder().setTitle(`🏠 ${g.name}`).addFields({name:'Owner',value:`<@${g.ownerId}>`,inline:true},{name:'Mitglieder',value:String(g.memberCount),inline:true},{name:'Channels',value:String(g.channels.cache.size),inline:true},{name:'Rollen',value:String(g.roles.cache.size),inline:true}).setColor('#5865F2')]})}
+if(i.commandName==='say'){await i.channel.send(i.options.getString('text',true));return i.reply({content:'✅ Gesendet.',ephemeral:true})}
+if(i.commandName==='announce'){await i.channel.send({embeds:[new EmbedBuilder().setTitle('📢 Ankündigung').setDescription(i.options.getString('text',true)).setColor('#5865F2')]});return i.reply({content:'✅ Ankündigung gesendet.',ephemeral:true})}
+if(i.commandName==='slowmode'){const s=i.options.getInteger('sekunden',true);await i.channel.setRateLimitPerUser(s);return i.reply({content:`✅ Slowmode: ${s}s`,ephemeral:true})}
+if(i.commandName==='lock'||i.commandName==='unlock'){const lock=i.commandName==='lock';await i.channel.permissionOverwrites.edit(i.guild.roles.everyone,{SendMessages:lock?false:null});return i.reply({content:lock?'🔒 Gesperrt.':'🔓 Entsperrt.',ephemeral:true})}
+if(i.commandName==='poll'){const q=i.options.getString('frage',true),a=['🇦','🇧','🇨','🇩','🇪'],os=[];for(let n=1;n<=5;n++){const x=i.options.getString(`option${n}`);if(x)os.push(x)}const m=await i.channel.send({embeds:[new EmbedBuilder().setTitle('📊 Umfrage').setDescription(`**${q}**\n\n${os.map((x,n)=>`${a[n]} ${x}`).join('\n')}`).setColor('#5865F2')]});for(let n=0;n<os.length;n++)await m.react(a[n]);return i.reply({content:'✅ Umfrage erstellt.',ephemeral:true})}
+if(i.commandName==='dm'){const u=i.options.getUser('user',true);await u.send(i.options.getString('text',true));return i.reply({content:'✅ DM gesendet.',ephemeral:true})}
+if(i.commandName==='nick'){const t=i.options.getMember('user'),n=i.options.getString('name',true);if(!canMod(i,t))return i.reply({content:'❌ Nicht möglich.',ephemeral:true});await t.setNickname(n);return i.reply({content:'✅ Nickname geändert.',ephemeral:true})}
 }
-
-client.once('ready', async () => {
-  console.log(`Bot online als ${client.user.tag}`);
-  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-  try {
-    // Genau wie die bereits funktionierenden Slash-Commands global registrieren.
-    await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-    console.log('Slash-Commands registriert: setup, nachricht, ausnach, clear');
-  } catch (error) {
-    console.error('Fehler beim Registrieren der Commands:', error);
-  }
-});
-
-function colorValue(value) {
-  const color = value || '#5865F2';
-  if (!/^#?[0-9A-Fa-f]{6}$/.test(color)) return null;
-  return color.startsWith('#') ? color : `#${color}`;
+if(i.isStringSelectMenu()){
+if(i.customId==='setup_command'){if(i.user.id!==SETUP_USER_ID)return i.reply({content:'❌ Kein Zugriff.',ephemeral:true});const c=i.values[0],rs=i.guild.roles.cache.filter(r=>r.id!==i.guild.id&&!r.managed).sort((a,b)=>b.position-a.position).first(25),rm=new StringSelectMenuBuilder().setCustomId(`setup_role:${c}`).setPlaceholder('Rolle auswählen ...').addOptions(rs.map(r=>({label:r.name.slice(0,100),value:r.id,description:`Darf /${c} benutzen` })));return i.update({content:`⚙️ Rolle für **/${c}** auswählen:`,embeds:[],components:[new ActionRowBuilder().addComponents(rm)]})}
+if(i.customId.startsWith('setup_role:')){if(i.user.id!==SETUP_USER_ID)return i.reply({content:'❌ Kein Zugriff.',ephemeral:true});const c=i.customId.split(':')[1],r=i.values[0];commandRoles.set(`${i.guildId}:${c}`,r);return i.update({content:`✅ **/${c}** ist für die Rolle <@&${r}> freigeschaltet.\n\nDu kannst ihn weiterhin benutzen.`,embeds:[],components:[]})}
+if(i.customId.startsWith('ausnach_')){const os=ausnachResponses.get(i.customId),s=os?.find(x=>String(x.number)===i.values[0]);return i.reply({content:s?.response||'❌ Nicht gefunden.',ephemeral:true})}
 }
-
-client.on('interactionCreate', async interaction => {
-  try {
-    if (interaction.isChatInputCommand()) {
-      if (interaction.commandName === 'setup') {
-        if (interaction.user.id !== SETUP_USER_ID) return interaction.reply({ content: '❌ Du darfst `/setup` nicht benutzen.', ephemeral: true });
-        const embed = new EmbedBuilder().setTitle('⚙️ Bot Setup').setDescription('Wähle einen Command aus und danach die Rolle, die ihn benutzen darf.').addFields(
-          { name: '/nachricht', value: 'Embed-Nachrichten senden' },
-          { name: '/ausnach', value: 'Auswahl-Nachrichten erstellen' },
-          { name: '/clear', value: 'Nachrichten löschen' }
-        ).setColor('#5865F2');
-        const menu = new StringSelectMenuBuilder().setCustomId('setup_command').setPlaceholder('Command auswählen ...').addOptions([
-          { label: '/nachricht', value: 'nachricht', description: 'Rolle für /nachricht festlegen' },
-          { label: '/ausnach', value: 'ausnach', description: 'Rolle für /ausnach festlegen' },
-          { label: '/clear', value: 'clear', description: 'Rolle für /clear festlegen' }
-        ]);
-        return interaction.reply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)], ephemeral: true });
-      }
-
-      if (!hasCommandAccess(interaction, interaction.commandName)) return interaction.reply({ content: '❌ Dieser Command wurde noch nicht eingerichtet oder du hast nicht die dafür festgelegte Rolle.', ephemeral: true });
-
-      if (interaction.commandName === 'nachricht') {
-        const text = interaction.options.getString('text', true);
-        const bild = interaction.options.getString('bild');
-        const farbe = colorValue(interaction.options.getString('farbe'));
-        if (!farbe) return interaction.reply({ content: '❌ Ungültige Farbe. Verwende z.B. `#ff0000`.', ephemeral: true });
-        const embed = new EmbedBuilder().setDescription(text).setColor(farbe).setTimestamp();
-        if (bild) { try { new URL(bild); embed.setImage(bild); } catch { return interaction.reply({ content: '❌ Die Bild-URL ist ungültig.', ephemeral: true }); } }
-        await interaction.channel.send({ embeds: [embed] });
-        return interaction.reply({ content: '✅ Nachricht wurde gesendet.', ephemeral: true });
-      }
-
-      if (interaction.commandName === 'ausnach') {
-        const mainText = interaction.options.getString('nachricht', true);
-        const options = [];
-        for (let i = 1; i <= 5; i++) {
-          const label = interaction.options.getString(`option${i}`);
-          const response = interaction.options.getString(`option${i}interaktion`);
-          if ((label && !response) || (!label && response)) return interaction.reply({ content: `❌ Option ${i}: beide Felder müssen zusammen angegeben werden.`, ephemeral: true });
-          if (label && response) options.push({ number: i, label, response });
-        }
-        const menuId = `ausnach_menu_${interaction.user.id}_${Date.now()}`;
-        const menu = new StringSelectMenuBuilder().setCustomId(menuId).setPlaceholder('Wähle eine Option aus ...').addOptions(options.map(option => ({ label: option.label.slice(0, 100), value: String(option.number), description: 'Klicke hier für die Interaktion' })));
-        const embed = new EmbedBuilder().setDescription(mainText).setColor('#5865F2').setTimestamp();
-        await interaction.channel.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)] });
-        ausnachResponses.set(menuId, options);
-        return interaction.reply({ content: '✅ Auswahl-Nachricht wurde gesendet.', ephemeral: true });
-      }
-
-      if (interaction.commandName === 'clear') {
-        const amount = interaction.options.getInteger('anzahl', true);
-        if (!interaction.channel?.isTextBased() || !interaction.channel.bulkDelete) return interaction.reply({ content: '❌ In diesem Channel können keine Nachrichten gelöscht werden.', ephemeral: true });
-        const deleted = await interaction.channel.bulkDelete(amount, true);
-        return interaction.reply({ content: `🧹 **${deleted.size}** Nachrichten wurden gelöscht.`, ephemeral: true });
-      }
-    }
-
-    if (interaction.isStringSelectMenu()) {
-      if (interaction.customId === 'setup_command') {
-        if (interaction.user.id !== SETUP_USER_ID) return interaction.reply({ content: '❌ Du darfst das Setup nicht benutzen.', ephemeral: true });
-        const commandName = interaction.values[0];
-        const roles = interaction.guild.roles.cache.filter(role => role.id !== interaction.guild.id && !role.managed).sort((a, b) => b.position - a.position).first(25);
-        if (!roles.length) return interaction.update({ content: '❌ Es wurden keine auswählbaren Rollen gefunden.', embeds: [], components: [] });
-        const roleMenu = new StringSelectMenuBuilder().setCustomId(`setup_role:${commandName}`).setPlaceholder('Rolle auswählen ...').addOptions(roles.map(role => ({ label: role.name.slice(0, 100), value: role.id, description: `Darf /${commandName} benutzen` })));
-        return interaction.update({ content: `⚙️ Rolle für **/${commandName}** auswählen:`, embeds: [], components: [new ActionRowBuilder().addComponents(roleMenu)] });
-      }
-
-      if (interaction.customId.startsWith('setup_role:')) {
-        if (interaction.user.id !== SETUP_USER_ID) return interaction.reply({ content: '❌ Du darfst das Setup nicht benutzen.', ephemeral: true });
-        const commandName = interaction.customId.split(':')[1];
-        const roleId = interaction.values[0];
-        commandRoles.set(`${interaction.guildId}:${commandName}`, roleId);
-        const role = interaction.guild.roles.cache.get(roleId);
-        return interaction.update({ content: `✅ **/${commandName}** darf jetzt die Rolle **${role?.name ?? 'Unbekannt'}** benutzen.\n\nDu kannst den Command weiterhin benutzen.`, embeds: [], components: [] });
-      }
-
-      if (interaction.customId.startsWith('ausnach_menu_')) {
-        const options = ausnachResponses.get(interaction.customId);
-        if (!options) return interaction.reply({ content: '❌ Diese Auswahl ist nicht mehr verfügbar.', ephemeral: true });
-        const selected = options.find(option => String(option.number) === interaction.values[0]);
-        if (!selected) return interaction.reply({ content: '❌ Auswahl nicht gefunden.', ephemeral: true });
-        return interaction.reply({ content: selected.response, ephemeral: true });
-      }
-    }
-  } catch (error) {
-    console.error('Interaction-Fehler:', error);
-    if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ Bei der Interaktion ist ein Fehler aufgetreten.', ephemeral: true }).catch(() => {});
-  }
-});
-
-client.on('guildMemberAdd', async member => {
-  const channel = member.guild.channels.cache.find(ch => ch.name === 'willkommen' && ch.isTextBased());
-  if (!channel) return;
-  const embed = new EmbedBuilder().setTitle('👋 Willkommen!').setDescription(`Willkommen ${member} auf **${member.guild.name}**!\n\nWir freuen uns, dass du da bist.`).addFields({ name: '👤 Benutzer', value: `${member.user.tag}`, inline: true }, { name: '👥 Mitglieder', value: `${member.guild.memberCount}`, inline: true }).setThumbnail(member.user.displayAvatarURL({ size: 256 })).setColor(0x57F287).setFooter({ text: `Willkommen bei ${member.guild.name}` }).setTimestamp();
-  await channel.send({ embeds: [embed] }).catch(console.error);
-});
-
+}catch(e){console.error(e);if(!i.replied&&!i.deferred)await i.reply({content:'❌ Fehler bei der Interaktion.',ephemeral:true}).catch(()=>{})}});
+client.on('guildMemberAdd',async m=>{const c=m.guild.channels.cache.find(x=>x.name==='willkommen'&&x.isTextBased());if(!c)return;await c.send({embeds:[new EmbedBuilder().setTitle('👋 Willkommen!').setDescription(`Willkommen ${m} auf **${m.guild.name}**!`).setThumbnail(m.user.displayAvatarURL({size:256})).setColor(0x57F287)]}).catch(console.error)});
 client.login(process.env.DISCORD_TOKEN);
